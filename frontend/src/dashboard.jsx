@@ -8,329 +8,200 @@ import {
   where,
   doc,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  orderBy,
 } from "firebase/firestore";
-
 import { auth, db } from "./firebase";
 import "./App.css";
 
 function Dashboard() {
-  const [task, setTask] = useState("");
-  const [priority, setPriority] = useState("Medium");
-  const [dueDate, setDueDate] = useState("");
   const [tasks, setTasks] = useState([]);
+  const [task, setTask] = useState("");
   const [filter, setFilter] = useState("All");
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
-  // Listen for the logged-in user's tasks
   useEffect(() => {
     const user = auth.currentUser;
-
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     const q = query(
       collection(db, "tasks"),
-      where("userId", "==", user.uid)
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc")
     );
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        setTasks(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...item.data()
-          }))
-        );
+        setTasks(snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        })));
         setLoading(false);
       },
-      (err) => {
-        setError(err.message);
+      (error) => {
+        console.error("Task loading error:", error);
         setLoading(false);
+        alert("Unable to load tasks: " + error.message);
       }
     );
 
     return () => unsubscribe();
   }, []);
 
-  // Add a new task
   const addTask = async (e) => {
     e.preventDefault();
-
-    if (!task.trim()) {
-      setError("Please enter a task title.");
-      return;
-    }
-
-    const user = auth.currentUser;
-
-    if (!user) {
-      setError("Please log in again.");
-      return;
-    }
+    if (!task.trim() || !auth.currentUser) return;
 
     try {
-      setError("");
-
       await addDoc(collection(db, "tasks"), {
         title: task.trim(),
-        priority,
-        dueDate,
         completed: false,
-        userId: user.uid,
-        createdAt: new Date().toISOString()
+        userId: auth.currentUser.uid,
+        createdAt: new Date(),
       });
-
       setTask("");
-      setPriority("Medium");
-      setDueDate("");
-    } catch (err) {
-      setError(err.message);
+    } catch (error) {
+      alert("Could not add task: " + error.message);
     }
   };
 
-  // Edit a task
-  const editTask = async (item) => {
-    const updatedTitle = window.prompt(
-      "Edit task title:",
-      item.title
-    );
-
-    if (!updatedTitle || !updatedTitle.trim()) return;
-
+  const toggleTask = async (item) => {
     try {
       await updateDoc(doc(db, "tasks", item.id), {
-        title: updatedTitle.trim()
+        completed: !item.completed,
       });
-    } catch (err) {
-      setError(err.message);
+    } catch (error) {
+      alert(error.message);
     }
   };
 
-  // Complete or reopen a task
-  const toggleComplete = async (item) => {
-    try {
-      await updateDoc(doc(db, "tasks", item.id), {
-        completed: !item.completed
-      });
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  // Delete a task
   const deleteTask = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this task?")) {
-      return;
-    }
+    if (!window.confirm("Delete this task?")) return;
 
     try {
       await deleteDoc(doc(db, "tasks", id));
-    } catch (err) {
-      setError(err.message);
+    } catch (error) {
+      alert(error.message);
     }
   };
 
-  // Statistics
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(
-    (item) => item.completed
-  ).length;
-  const pendingTasks = totalTasks - completedTasks;
-
-  const progress =
-    totalTasks === 0
-      ? 0
-      : Math.round((completedTasks / totalTasks) * 100);
-
-  // Search and filter
   const filteredTasks = tasks.filter((item) => {
-    const matchesSearch = item.title
-      .toLowerCase()
-      .includes(search.toLowerCase());
-
-    const matchesFilter =
-      filter === "All" ||
-      (filter === "Completed" && item.completed) ||
-      (filter === "Pending" && !item.completed);
-
-    return matchesSearch && matchesFilter;
+    if (filter === "Active") return !item.completed;
+    if (filter === "Completed") return item.completed;
+    return true;
   });
 
+  const completedCount = tasks.filter((item) => item.completed).length;
+  const activeCount = tasks.length - completedCount;
+
   return (
-    <div className="dashboard">
-      <header className="dashboard-header">
-        <div>
-          <h1>TaskFlow Dashboard</h1>
-          <p>Manage your tasks efficiently</p>
+    <main className="dashboard">
+      <aside className="sidebar">
+        <h2 className="brand">TaskFlow<span>.</span></h2>
+        <p className="sidebar-label">WORKSPACE</p>
+        <p className="sidebar-link active">▦ &nbsp; My Tasks</p>
+        <p className="sidebar-link">◷ &nbsp; Overview</p>
+        <div className="sidebar-bottom">
+          <p>Signed in as</p>
+          <strong>{auth.currentUser?.email}</strong>
         </div>
-      </header>
+      </aside>
 
-      {/* Statistics */}
-      <section className="stats-grid">
-        <div className="stat-card">
-          <h3>Total Tasks</h3>
-          <span>{totalTasks}</span>
-        </div>
+      <section className="dashboard-content">
+        <header className="dashboard-header">
+          <div>
+            <p className="eyebrow">YOUR WORKSPACE</p>
+            <h1>My Tasks</h1>
+            <p className="subtitle">Stay focused. Get things done.</p>
+          </div>
+          <div className="user-avatar">
+            {(auth.currentUser?.email || "U")[0].toUpperCase()}
+          </div>
+        </header>
 
-        <div className="stat-card">
-          <h3>Completed</h3>
-          <span>{completedTasks}</span>
-        </div>
+        <section className="stats">
+          <article className="stat-card">
+            <p>Total Tasks</p>
+            <h2>{tasks.length}</h2>
+          </article>
+          <article className="stat-card">
+            <p>In Progress</p>
+            <h2>{activeCount}</h2>
+          </article>
+          <article className="stat-card">
+            <p>Completed</p>
+            <h2>{completedCount}</h2>
+          </article>
+        </section>
 
-        <div className="stat-card">
-          <h3>Pending</h3>
-          <span>{pendingTasks}</span>
-        </div>
+        <section className="task-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Task List</h2>
+              <p>Manage your daily activities</p>
+            </div>
+          </div>
 
-        <div className="stat-card">
-          <h3>Progress</h3>
-          <span>{progress}%</span>
-        </div>
-      </section>
+          <form className="task-form" onSubmit={addTask}>
+            <input
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              placeholder="What needs to be done?"
+              aria-label="New task"
+            />
+            <button type="submit">+ Add Task</button>
+          </form>
 
-      {/* Progress bar */}
-      <section className="progress-section">
-        <div className="progress-heading">
-          <h3>Overall Progress</h3>
-          <span>{progress}%</span>
-        </div>
+          <div className="filter-bar">
+            {["All", "Active", "Completed"].map((name) => (
+              <button
+                key={name}
+                className={filter === name ? "filter active-filter" : "filter"}
+                onClick={() => setFilter(name)}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
 
-        <div className="progress-track">
-          <div
-            className="progress-fill"
-            style={{ width: `${progress}%` }}
-          ></div>
-        </div>
-      </section>
-
-      {/* Add task */}
-      <section className="add-task-section">
-        <h2>Add New Task</h2>
-
-        <form className="task-form" onSubmit={addTask}>
-          <input
-            type="text"
-            placeholder="Enter task title"
-            value={task}
-            onChange={(e) => setTask(e.target.value)}
-          />
-
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-          >
-            <option value="Low">Low Priority</option>
-            <option value="Medium">Medium Priority</option>
-            <option value="High">High Priority</option>
-          </select>
-
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-          />
-
-          <button type="submit" className="add-button">
-            + Add Task
-          </button>
-        </form>
-
-        {error && <p className="error-message">{error}</p>}
-      </section>
-
-      {/* Task list */}
-      <section className="tasks-section">
-        <div className="tasks-heading">
-          <h2>My Tasks</h2>
-
-          <input
-            type="text"
-            className="search-input"
-            placeholder="Search tasks..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <div className="filter-buttons">
-          {["All", "Pending", "Completed"].map((item) => (
-            <button
-              key={item}
-              className={filter === item ? "active-filter" : ""}
-              onClick={() => setFilter(item)}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-
-        {loading ? (
-          <p className="empty-message">Loading tasks...</p>
-        ) : filteredTasks.length === 0 ? (
-          <p className="empty-message">No tasks found.</p>
-        ) : (
-          <div className="task-list">
-            {filteredTasks.map((item) => (
-              <div className="task-card" key={item.id}>
-                <div className="task-info">
-                  <h3
-                    className={
-                      item.completed ? "completed-title" : ""
-                    }
-                  >
-                    {item.title}
-                  </h3>
-
-                  <div className="task-details">
-                    <span className={`priority ${item.priority?.toLowerCase() || "medium"}`}>
-                      {item.priority || "Medium"} Priority
+          {loading ? (
+            <p className="empty-state">Loading tasks...</p>
+          ) : filteredTasks.length === 0 ? (
+            <div className="empty-state">
+              <h3>No tasks found</h3>
+              <p>Add a task above to get started.</p>
+            </div>
+          ) : (
+            <div className="task-list">
+              {filteredTasks.map((item) => (
+                <article className="task-item" key={item.id}>
+                  <label className="task-title">
+                    <input
+                      type="checkbox"
+                      checked={item.completed}
+                      onChange={() => toggleTask(item)}
+                    />
+                    <span className={item.completed ? "completed-task" : ""}>
+                      {item.title}
                     </span>
-
-                    <span>
-                      Due Date: {item.dueDate || "Not set"}
-                    </span>
-
-                    <span className={item.completed ? "status-done" : "status-pending"}>
-                      {item.completed ? "Completed" : "Pending"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="task-actions">
-                  <button
-                    className="complete-button"
-                    onClick={() => toggleComplete(item)}
-                  >
-                    {item.completed ? "Reopen" : "Complete"}
-                  </button>
-
-                  <button
-                    className="edit-button"
-                    onClick={() => editTask(item)}
-                  >
-                    Edit
-                  </button>
-
+                  </label>
                   <button
                     className="delete-button"
                     onClick={() => deleteTask(item.id)}
                   >
                     Delete
                   </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </section>
-
-      <footer className="dashboard-footer">
-        <p>TaskFlow © 2026 | Stay Organized. Stay Productive.</p>
-      </footer>
-    </div>
+    </main>
   );
 }
 

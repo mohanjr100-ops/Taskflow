@@ -21,15 +21,29 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setPage("login");
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
   if (loading) {
-    return <h2>Loading TaskFlow...</h2>;
+    return (
+      <div className="loading-screen">
+        <h2>TaskFlow</h2>
+        <p>Loading your workspace...</p>
+      </div>
+    );
   }
 
   if (user) {
     return (
-      <div>
+      <div className="app-container">
         <Dashboard />
-        <button onClick={() => signOut(auth)}>
+        <button className="logout-button" onClick={handleLogout}>
           Logout
         </button>
       </div>
@@ -37,27 +51,33 @@ function App() {
   }
 
   return (
-    <div>
+    <div className="auth-container">
       {page === "login" ? (
-        <div>
+        <>
           <Login />
-
-          <p>Don't have an account?</p>
-
-          <button onClick={() => setPage("register")}>
-            Register
-          </button>
-        </div>
+          <p>
+            Don't have an account?{" "}
+            <button
+              className="auth-switch"
+              onClick={() => setPage("register")}
+            >
+              Register
+            </button>
+          </p>
+        </>
       ) : (
-        <div>
+        <>
           <Register />
-
-          <p>Already have an account?</p>
-
-          <button onClick={() => setPage("login")}>
-            Login
-          </button>
-        </div>
+          <p>
+            Already have an account?{" "}
+            <button
+              className="auth-switch"
+              onClick={() => setPage("login")}
+            >
+              Login
+            </button>
+          </p>
+        </>
       )}
     </div>
   );
